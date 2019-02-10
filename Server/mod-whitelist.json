@@ -1,0 +1,26 @@
+﻿{
+  /**
+   * The mods to prohibit on the server. Each key is the display name shown to the user when they
+   * get kicked, and the value is an array of unique mod IDs to match (as listed in the mod's
+   * manifest).
+   */
+  "Animal Husbandry Mod": [ "AnimalHusbandryMod.dll" ],
+  "Better Shop Menu": [ "BetterShopMenu.dll" ],
+  "Console Commands": [ "ConsoleCommands.dll" ],
+  "Content Patcher": [ "ContentPatcher.dll" ],
+  "Custom Furniture": [ "CustomFurniture.dll" ],
+  "Deep Woods": [ "DeepWoodsMod.dll" ],
+  "Json Assets": [ "JsonAssets.dll" ],
+  "kisekae": [ "Kisekae.dll" ],
+  "Lookup Anything": [ "LookupAnything.dll" ],
+  "MailFramework": [ "MailFrameworkMod.dll" ],
+  "NPC Map Locations": [ "NPCMapLocations.dll" ],
+  "Price Drops": [ "priceDrops.dll" ],
+  "PyTK": [ "PyTK.dll" ],
+  "Save Backup": [ "SaveBackup.dll" ],
+  "Seed Bag": [ "SeedBag.dll" ],
+  "Skip Intro": [ "SkipIntro.dll" ],
+  "SocialTabPatch": [ "Social Tab Patch.dll" ],
+  "SpaceCore": [ "SpaceCore.dll" ],
+  "Teh's Fishing Overhaul": [ "TehPers.FishingOverhaul.dll" ]
+}

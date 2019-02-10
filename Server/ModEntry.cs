@@ -1,13 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using FunnySnek.AntiCheat.Server.Framework;
+﻿using FunnySnek.AntiCheat.Server.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
 using StardewValley.Network;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
+// Code adapted from FunnySnek's AntiCheat server
 namespace FunnySnek.AntiCheat.Server
 {
     /// <summary>The entry class called by SMAPI.</summary>
@@ -17,7 +18,7 @@ namespace FunnySnek.AntiCheat.Server
         ** Properties
         *********/
         /// <summary>The name of the blacklist file on the server.</summary>
-        private readonly string BlacklistFileName = "mod-blacklist.json";
+        private readonly string WhitelistFileName = "mod-whitelist.json";
 
         /// <summary>The number of seconds to wait until kicking a player (to make sure they receive the chat the message).</summary>
         private readonly int SecondsUntilKick = 5;
@@ -25,8 +26,8 @@ namespace FunnySnek.AntiCheat.Server
         /// <summary>The connected players.</summary>
         private readonly List<PlayerSlot> PlayersToKick = new List<PlayerSlot>();
 
-        /// <summary>The mod names to prohibit indexed by mod ID.</summary>
-        private readonly IDictionary<string, string> ProhibitedMods = new Dictionary<string, string>();
+        /// <summary>The mod names to allow indexed by mod ID.</summary>
+        private readonly IDictionary<string, string> AllowedMods = new Dictionary<string, string>();
 
 
         /*********
@@ -46,17 +47,26 @@ namespace FunnySnek.AntiCheat.Server
             helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
 
             // read mod blacklist
-            var blacklist = this.Helper.Data.ReadJsonFile<Dictionary<string, string[]>>(this.BlacklistFileName);
-            if (blacklist == null || !blacklist.Any())
+            var whitelist = this.Helper.Data.ReadJsonFile<Dictionary<string, string[]>>(this.WhitelistFileName);
+            if (whitelist == null || !whitelist.Any())
             {
-                this.Monitor.Log($"The {this.BlacklistFileName} file is missing or empty; please reinstall the mod.", LogLevel.Error);
+                this.Monitor.Log($"The {this.WhitelistFileName} file is missing or empty; please reinstall the mod.", LogLevel.Error);
                 return;
             }
-            foreach (var entry in blacklist)
+            foreach (var entry in whitelist)
             {
                 foreach (string id in entry.Value)
-                    this.ProhibitedMods[id.Trim()] = entry.Key;
+                {
+                    this.AllowedMods[id.Trim()] = entry.Key;
+                }
+                    
             }
+
+            foreach (var modAllowed in this.AllowedMods)
+            {
+                this.Monitor.Log($"Key: {modAllowed.Key},   {modAllowed.Value}");
+            }
+
         }
 
 
@@ -71,8 +81,8 @@ namespace FunnySnek.AntiCheat.Server
             this.PlayersToKick.Clear();
             if (Context.IsMainPlayer)
             {
-                if (!this.ProhibitedMods.Any())
-                    this.SendPublicChat($"Anti-Cheat's {this.BlacklistFileName} file is missing or empty; please reinstall the mod.", error: true);
+                if (!this.AllowedMods.Any())
+                    this.SendPublicChat($"Anti-Cheat's {this.WhitelistFileName} file is missing or empty; please reinstall the mod.", error: true);
                 else
                     this.SendPublicChat("Anti-Cheat activated.");
             }
@@ -92,19 +102,29 @@ namespace FunnySnek.AntiCheat.Server
             // kick: blocked mods found
             if (e.Peer.HasSmapi)
             {
-                string[] blockedModNames = this
-                    .GetBlockedMods(e.Peer)
+                string[] excessMods = this
+                    .GetExcessMods(e.Peer)
                     .Distinct(StringComparer.InvariantCultureIgnoreCase)
                     .OrderBy(p => p)
                     .ToArray();
-                if (blockedModNames.Any())
+
+                string[] neededMods = this
+                    .GetNeededMods(e.Peer)
+                    .Distinct(StringComparer.InvariantCultureIgnoreCase)
+                    .OrderBy(p => p)
+                    .ToArray();
+
+                if (excessMods.Any() || neededMods.Any())
                 {
-                    this.Monitor.Log($"   Will kick in {this.SecondsUntilKick} seconds: found prohibited mods {string.Join(", ", blockedModNames)}.");
+                    this.Monitor.Log($"   Will kick in {this.SecondsUntilKick} seconds: mod mismatch.");
+                    this.Monitor.Log($"     Player has excess mods: {string.Join(", ", excessMods)}");
+                    this.Monitor.Log($"     Player needs mods: {string.Join(", ", neededMods)}");
                     this.PlayersToKick.Add(new PlayerSlot
                     {
                         Peer = e.Peer,
                         CountDownSeconds = this.SecondsUntilKick,
-                        BlockedModNames = blockedModNames
+                        ExcessMods = excessMods,
+                        NeededMods = neededMods
                     });
                     return;
                 }
@@ -144,9 +164,17 @@ namespace FunnySnek.AntiCheat.Server
                     string name = Game1.getOnlineFarmers().FirstOrDefault(p => p.UniqueMultiplayerID == slot.Peer.PlayerID)?.Name ?? slot.Peer.PlayerID.ToString();
 
                     // send chat messages
-                    int count = slot.BlockedModNames.Length;
-                    this.SendPublicChat($"{name}: you're being kicked by Anti-Cheat. You have {(count == 1 ? "a blocked mod" : $"{count} blocked mods")} installed.", error: true);
-                    this.SendDirectMessage(playerID, $"Please remove these mods: {string.Join(", ", slot.BlockedModNames)}.");
+                    this.SendPublicChat($"{name}: you're being kicked by Anti-Cheat. You have different mods", error: true);
+                    this.SendDirectMessage(playerID, $"Please remove these mods: {string.Join(", ", slot.ExcessMods)}.");
+                    this.SendDirectMessage(playerID, $"Please add these mods: {string.Join(", ", slot.NeededMods)}.");
+                    if (slot.ExcessMods.Any())
+                    {
+                        this.SendPublicChat($"{name} Could not connect, they had excess mods: {string.Join(", ", slot.ExcessMods)}");
+                    }
+                    if (slot.NeededMods.Any())
+                    {
+                        this.SendPublicChat($"{name} Could not connect, they did not have these mods: {string.Join(", ", slot.NeededMods)}");
+                    }
 
                     // kick player
                     this.KickPlayer(playerID);
@@ -154,15 +182,31 @@ namespace FunnySnek.AntiCheat.Server
             }
             this.PlayersToKick.RemoveAll(p => p.CountDownSeconds < 0);
         }
+        
 
-        /// <summary>Get a list of blocked mod names the player has installed.</summary>
-        /// <param name="peer">The peer whose mods to checks.</param>
-        private IEnumerable<string> GetBlockedMods(IMultiplayerPeer peer)
+
+        // Returns a list of mods that the server has which the connecting player does not have
+        private IEnumerable<string> GetNeededMods(IMultiplayerPeer peer)
         {
-            foreach (var pair in this.ProhibitedMods)
+            foreach (var pair in this.AllowedMods)
             {
-                if (peer.GetMod(pair.Key) != null)
+                if (!peer.Mods.Select(mod => mod.Name).Contains(pair.Key))
+                {
                     yield return pair.Value;
+                }
+            }
+        }
+
+
+        // Returns a list of mods that the connecting player has which are not on the server.
+        private IEnumerable<string> GetExcessMods(IMultiplayerPeer peer)
+        {
+            foreach (var mod in peer.Mods)
+            {
+                if (!this.AllowedMods.Values.Contains(mod.Name))
+                {
+                    yield return mod.Name;
+                }
             }
         }
 

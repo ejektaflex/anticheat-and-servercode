@@ -27,7 +27,7 @@ namespace FunnySnek.AntiCheat.Server
         private readonly List<PlayerSlot> PlayersToKick = new List<PlayerSlot>();
 
         /// <summary>The mod names to allow indexed by mod ID.</summary>
-        private readonly IDictionary<string, string> AllowedMods = new Dictionary<string, string>();
+        private readonly List<string> AllowedMods = new List<string>();
 
 
         /*********
@@ -37,6 +37,7 @@ namespace FunnySnek.AntiCheat.Server
         /// <param name="helper">Provides simplified APIs for writing mods.</param>
         public override void Entry(IModHelper helper)
         {
+
             // apply patches
             Patch.PatchAll(this.ModManifest.UniqueID);
 
@@ -46,27 +47,12 @@ namespace FunnySnek.AntiCheat.Server
             helper.Events.GameLoop.SaveLoaded += this.SaveLoaded;
             helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
 
-            // read mod blacklist
-            var whitelist = this.Helper.Data.ReadJsonFile<Dictionary<string, string[]>>(this.WhitelistFileName);
-            if (whitelist == null || !whitelist.Any())
+            this.Monitor.Log("Mods:");
+            foreach (IModInfo mod in helper.ModRegistry.GetAll())
             {
-                this.Monitor.Log($"The {this.WhitelistFileName} file is missing or empty; please reinstall the mod.", LogLevel.Error);
-                return;
+                if (mod.Manifest.Name != this.ModManifest.Name)
+                    AllowedMods.Add(mod.Manifest.Name);
             }
-            foreach (var entry in whitelist)
-            {
-                foreach (string id in entry.Value)
-                {
-                    this.AllowedMods[id.Trim()] = entry.Key;
-                }
-                    
-            }
-
-            foreach (var modAllowed in this.AllowedMods)
-            {
-                this.Monitor.Log($"Key: {modAllowed.Key},   {modAllowed.Value}");
-            }
-
         }
 
 
@@ -102,6 +88,12 @@ namespace FunnySnek.AntiCheat.Server
             // kick: blocked mods found
             if (e.Peer.HasSmapi)
             {
+
+                foreach (IMultiplayerPeerMod mood in  e.Peer.Mods)
+                {
+                    this.Monitor.Log($"MOOOOD {mood.Name}");
+                }
+
                 string[] excessMods = this
                     .GetExcessMods(e.Peer)
                     .Distinct(StringComparer.InvariantCultureIgnoreCase)
@@ -188,11 +180,11 @@ namespace FunnySnek.AntiCheat.Server
         // Returns a list of mods that the server has which the connecting player does not have
         private IEnumerable<string> GetNeededMods(IMultiplayerPeer peer)
         {
-            foreach (var pair in this.AllowedMods)
+            foreach (var modName in this.AllowedMods)
             {
-                if (!peer.Mods.Select(mod => mod.Name).Contains(pair.Key))
+                if (!peer.Mods.Select(mod => mod.Name).Contains(modName))
                 {
-                    yield return pair.Value;
+                    yield return modName;
                 }
             }
         }
@@ -203,7 +195,7 @@ namespace FunnySnek.AntiCheat.Server
         {
             foreach (var mod in peer.Mods)
             {
-                if (!this.AllowedMods.Values.Contains(mod.Name))
+                if (!this.AllowedMods.Contains(mod.Name))
                 {
                     yield return mod.Name;
                 }
@@ -221,6 +213,7 @@ namespace FunnySnek.AntiCheat.Server
                 Game1.chatBox.activate();
                 Game1.chatBox.setText("/color red");
                 Game1.chatBox.chatBox.RecieveCommandInput('\r');
+                Game1.chatBox.setText("/color white");
             }
 
             // send chat message
